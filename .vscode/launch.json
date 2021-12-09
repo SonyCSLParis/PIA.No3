@@ -1,0 +1,41 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "train",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--config=CIA/configs/piarceiverStack.py",
+                "-t",
+                "--num_workers=0"
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        },
+        {
+            "name": "generate",
+            "type": "python",
+            "request": "launch",
+            "program": "main.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--config=models/saved/full_dataset/event_performer/event_performer_finetune/config.py",
+                "-o",
+                "-l",
+                "--num_workers=0"
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+            }
+        }
+    ]
+}
