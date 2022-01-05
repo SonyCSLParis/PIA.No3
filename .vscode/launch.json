@@ -12,7 +12,7 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                "--config=CIA/configs/piarceiverStack.py",
+                "--config=CIA/configs/piarceiverRw.py",
                 "-t",
                 "--num_workers=0"
             ],
@@ -28,7 +28,7 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                "--config=models/saved/full_dataset/event_performer/event_performer_finetune/config.py",
+                "--config=models/piarceiverRw_2022-01-05_12:13:44/config.py",
                 "-o",
                 "-l",
                 "--num_workers=0"

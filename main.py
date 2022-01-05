@@ -193,11 +193,6 @@ def main(rank, train, load, overfitted, config, num_workers, world_size, model_d
 
         ############################################################
         # inpainting
-        # start_time = time.time()
-        # x_gen, generated_region, decoding_end, num_event_generated, done = decoder_handler.inpaint(
-        #     x=x.clone(), metadata_dict=metadata_dict, temperature=1., top_p=0.95, top_k=0)
-        # end_time = time.time()
-        ############################################################
         start_time = time.time()
         (
             x_gen,
@@ -205,7 +200,7 @@ def main(rank, train, load, overfitted, config, num_workers, world_size, model_d
             decoding_end,
             num_event_generated,
             done,
-        ) = model_handler.inpaint_non_optimized(
+        ) = model_handler.inpaint(
             x=x.clone(),
             metadata_dict=metadata_dict,
             temperature=1.0,

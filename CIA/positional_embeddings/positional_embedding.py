@@ -51,7 +51,7 @@ class PositionalEmbedding(nn.Module):
             )
         return x_embed
 
-    def forward_step(self, x_embed, i=0, h=None, metadata_dict={}):
+    def forward_step(self, x_embed, i=0, metadata_dict={}):
         """Concatenates all the simple_positional_embeddings
         on the last dim of x_embed
 
@@ -62,16 +62,8 @@ class PositionalEmbedding(nn.Module):
             target (batch_size, num_events_num_channels, optional):
             The target tensor (not embedded), can be used compute some quantities. Defaults to None.
         """
-        if isinstance(h, list):
-            pass
-        else:
-            if h is None:
-                h = [None] * len(self.base_positional_embeddings)
-
-        new_h_list = []
-        for positional_embedding, h_pe in zip(self.base_positional_embeddings, h):
-            x_embed, new_h_pe = positional_embedding.forward_step(
-                x_embed, i=i, h=h_pe, metadata_dict=metadata_dict
+        for positional_embedding in zip(self.base_positional_embeddings):
+            x_embed = positional_embedding.forward_step(
+                x_embed, i=i, metadata_dict=metadata_dict
             )
-            new_h_list.append(new_h_pe)
-        return x_embed, new_h_list
+        return x_embed

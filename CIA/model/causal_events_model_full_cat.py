@@ -151,18 +151,12 @@ class CausalEventsModelFullCat(nn.Module):
         # target_seq is (batch_size, num_vents, dim * num_channels)
 
         # forward pass
-        out = self.transformer(
-            target_seq,
-            # TODO add parameter
-            # TODO pb with inferring_states = True
-            inferring_states=False,
-            states=None,
-        )
+        out = self.transformer(target_seq)
         output = out["x"]
 
         return output, target_embedded
 
-    def forward(self, target, metadata_dict, compute_loss_prefix, h_pe_init=None):
+    def forward(self, target, metadata_dict, compute_loss_prefix):
         """
         :param target: sequence of tokens (batch_size, num_events, num_channels)
         :return:
@@ -269,72 +263,36 @@ class CausalEventsModelFullCat(nn.Module):
         weight = self.pre_softmaxes[channel_id](weight)
         return weight
 
-    def forward_step(self, target, metadata_dict, i):
-        """
-        if i == 0, target is not used: SOS instead
-        :param target: sequence of tokens (batch_size,)
-        :param i:
-        :param h_pe:
-        :return:
-        """
-        raise NotImplementedError
+    # def recurrent_step(self, target, metadata_dict, states, decoding_index):
+    #     # aaa = time.time()
+    #     # CRUCIAL LINE
+    #     # metadata_dict['original_token'] = target[:, decoding_index]
 
-    def infer_hidden_states(self, priming_seq, metadata_dict, decoding_start_index):
-        target_embedded = self.data_processor.embed(priming_seq)
-        target_seq = flatten(target_embedded)
-        target_seq, layer_pos_emb, h_pe = self.prepare_sequence(
-            target_seq, metadata_dict, h_pe_init=None
-        )
-        out = self.transformer(
-            target_seq[:, : decoding_start_index + 1],
-            pos_emb_input=layer_pos_emb[:, : decoding_start_index + 1],
-            inferring_states=True,
-            states=None,
-        )
-        # softmax
-        # prediction for time_index decoding_start_index
-        out_x = out["x"][:, -1]
-        channel_index_output = decoding_start_index % self.num_channels_target
-        weights = self.pre_softmaxes[channel_index_output](out_x)
-        return {
-            "loss": None,
-            "weights": weights,
-            "Zs": out["Zs"],
-            "Ss": out["Ss"],
-            "Zs_rot": out["Zs_rot"],
-            "Ss_rot": out["Ss_rot"],
-        }
-
-    def recurrent_step(self, target, metadata_dict, states, decoding_index):
-        # aaa = time.time()
-        # CRUCIAL LINE
-        # metadata_dict['original_token'] = target[:, decoding_index]
-
-        target_embedded = self.data_processor.embed(target)
-        target_seq = flatten(target_embedded)
-        target_seq, layer_pos_emb, h_pe = self.prepare_sequence(
-            target_seq, metadata_dict, h_pe_init=None
-        )
-        # bbb = time.time()
-        out = self.transformer(
-            target_seq[:, decoding_index : decoding_index + 1],
-            pos_emb_input=layer_pos_emb[:, decoding_index : decoding_index + 1],
-            inferring_states=False,
-            states=states,
-        )
-        # softmax
-        # prediction for time_index decoding_start_index
-        out_x = out["x"][:, 0]
-        channel_index_output = decoding_index % self.num_channels_target
-        weights = self.pre_softmaxes[channel_index_output](out_x)
-        # ccc = time.time()
-        # print(f'Time preprocess: {bbb-aaa}\t{(bbb-aaa)/(ccc-aaa)}\%')
-        # print(f'Time generation: {ccc-bbb}\t{(ccc-bbb)/(ccc-aaa)}\%')
-        return {
-            "loss": None,
-            "weights": weights,
-            "Zs": out["Zs"],
-            "Ss": out["Ss"],
-            "Zs_rot": out["Zs_rot"],
-            "Ss_rot": out["Ss_rot"],
-        }
+    #     target_embedded = self.data_processor.embed(target)
+    #     target_seq = flatten(target_embedded)
+    #     target_seq, layer_pos_emb = self.prepare_sequence(
+    #         target_seq, metadata_dict
+    #     )
+    #     # bbb = time.time()
+    #     out = self.transformer(
+    #         target_seq[:, decoding_index : decoding_index + 1],
+    #         pos_emb_input=layer_pos_emb[:, decoding_index : decoding_index + 1],
+    #         inferring_states=False,
+    #         states=states,
+    #     )
+    #     # softmax
+    #     # prediction for time_index decoding_start_index
+    #     out_x = out["x"][:, 0]
+    #     channel_index_output = decoding_index % self.num_channels_target
+    #     weights = self.pre_softmaxes[channel_index_output](out_x)
+    #     # ccc = time.time()
+    #     # print(f'Time preprocess: {bbb-aaa}\t{(bbb-aaa)/(ccc-aaa)}\%')
+    #     # print(f'Time generation: {ccc-bbb}\t{(ccc-bbb)/(ccc-aaa)}\%')
+    #     return {
+    #         "loss": None,
+    #         "weights": weights,
+    #         "Zs": out["Zs"],
+    #         "Ss": out["Ss"],
+    #         "Zs_rot": out["Zs_rot"],
+    #         "Ss_rot": out["Ss_rot"],
+    #     }

@@ -96,7 +96,9 @@ def get_model(
 ):
     num_channels = data_processor.num_channels
     num_events = data_processor.num_events
-    if model_kwargs["type"] == "perceiver_rw":
+    if (
+        model_kwargs["type"] == "perceiver_rw"
+    ):  # Diff with perceiver_tower is that there processing of latent is shallow compared with tower
         transformer = PerceiverReadWrite(
             dim=model_kwargs["d_model"],
             num_layers=model_kwargs["num_layers"],
@@ -138,31 +140,16 @@ def get_model(
     else:
         raise NotImplementedError
 
-    autoregressive_decoding_type = model_kwargs["autoregressive_decoding"]
-    if autoregressive_decoding_type == "fullcat":
-        model = CausalEventsModelFullCat(
-            data_processor=data_processor,
-            dataloader_generator=dataloader_generator,
-            positional_embedding=positional_embedding,
-            sos_embedding=sos_embedding,
-            d_model=model_kwargs["d_model"],
-            num_channels=num_channels,
-            num_events=num_events,
-            transformer=transformer,
-        )
-    # elif autoregressive_decoding_type == "mlp":
-    #     model = CausalEventsModel(
-    #         data_processor=data_processor,
-    #         dataloader_generator=dataloader_generator,
-    #         positional_embedding=positional_embedding,
-    #         sos_embedding=sos_embedding,
-    #         d_model=model_kwargs["d_model"],
-    #         num_channels=num_channels,
-    #         num_events=num_events,
-    #         transformer=transformer,
-    #     )
-    else:
-        raise NotImplementedError
+    model = CausalEventsModelFullCat(
+        data_processor=data_processor,
+        dataloader_generator=dataloader_generator,
+        positional_embedding=positional_embedding,
+        sos_embedding=sos_embedding,
+        d_model=model_kwargs["d_model"],
+        num_channels=num_channels,
+        num_events=num_events,
+        transformer=transformer,
+    )
     return model
 
 
