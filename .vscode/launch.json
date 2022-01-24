@@ -12,12 +12,12 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                "--config=CIA/configs/piarceiverRw.py",
+                "--config=CIA/configs/piarceiverRwNullMasking.py",
                 "-t",
                 "--num_workers=0"
             ],
             "env": {
-                "CUDA_VISIBLE_DEVICES": "0",
+                "CUDA_VISIBLE_DEVICES": "1",
             }
         },
         {

@@ -12,11 +12,14 @@ class DataProcessor(nn.Module):
       (batch_size, num_events, num_channels, embedding_size)
     """
 
-    def __init__(self, embedding_size,
-                 num_events,
-                 num_tokens_per_channel,
-                 add_mask_token=True,
-                 num_additional_tokens=1):
+    def __init__(
+        self,
+        embedding_size,
+        num_events,
+        num_tokens_per_channel,
+        add_mask_token=True,
+        num_additional_tokens=1,
+    ):
         super(DataProcessor, self).__init__()
         self.embedding_size = embedding_size
         self.num_events = num_events
@@ -38,11 +41,9 @@ class DataProcessor(nn.Module):
         :param x: (..., num_channels)
         :return: (..., num_channels, embedding_size)
         """
-        return torch.cat([
-            embedding(t)
-            for t, embedding in
-            zip(x.split(1, dim=-1), self.embeddings)
-        ], dim=-2
+        return torch.cat(
+            [embedding(t) for t, embedding in zip(x.split(1, dim=-1), self.embeddings)],
+            dim=-2,
         )
 
     def embed_step(self, x, channel_index):
@@ -54,7 +55,6 @@ class DataProcessor(nn.Module):
         """
         return self.embeddings[channel_index](x)
 
-
     def embed_dict(self, tensor_dict):
         """
         to be called after preprocess
@@ -62,10 +62,7 @@ class DataProcessor(nn.Module):
         :param tensor_dict: dict of tensors of shape (... num_events, num_channels)
         :return:
         """
-        return {
-            k: self.embed(v)
-            for k, v in tensor_dict.items()
-        }
+        return {k: self.embed(v) for k, v in tensor_dict.items()}
 
     def preprocess_dict(self, tensor_dict):
         """
@@ -73,10 +70,7 @@ class DataProcessor(nn.Module):
         :param tensor_dict:
         :return:
         """
-        return {
-            k: self.preprocess(v)
-            for k, v in tensor_dict.items()
-        }
+        return {k: self.preprocess(v) for k, v in tensor_dict.items()}
 
     def preprocess(self, reconstruction, original=None):
         """
@@ -104,4 +98,4 @@ class DataProcessor(nn.Module):
         :return:
         """
         x = x.contiguous().view(-1).detach().cpu().numpy()
-        return '_'.join([str(c).zfill(2) for c in x])
+        return "_".join([str(c).zfill(2) for c in x])
