@@ -112,12 +112,12 @@ class Handler:
     def train_model(
         self,
         batch_size,
-        num_batches=None,
-        num_epochs=10,
-        lr=1e-3,
-        plot=False,
-        num_workers=0,
-        compute_loss_prefix=False,
+        num_batches,
+        num_epochs,
+        lr,
+        plot,
+        compute_loss_prefix,
+        non_conditioned_examples,
         **kwargs,
     ):
         if plot and is_main_process():
@@ -139,6 +139,7 @@ class Handler:
                 train=True,
                 num_batches=num_batches,
                 compute_loss_prefix=compute_loss_prefix,
+                non_conditioned_examples=non_conditioned_examples,
             )
             del generator_train
 
@@ -148,6 +149,7 @@ class Handler:
                     train=False,
                     num_batches=num_batches // 2 if num_batches is not None else None,
                     compute_loss_prefix=compute_loss_prefix,
+                    non_conditioned_examples=non_conditioned_examples,
                 )
                 del generator_val
             valid_loss = monitored_quantities_val["loss"]

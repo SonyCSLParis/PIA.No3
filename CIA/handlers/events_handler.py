@@ -39,9 +39,10 @@ class EventsHandler(Handler):
     def epoch(
         self,
         data_loader,
-        train=True,
-        num_batches=None,
-        compute_loss_prefix=True,
+        train,
+        num_batches,
+        compute_loss_prefix,
+        non_conditioned_examples,
     ):
         means = None
 
@@ -60,7 +61,10 @@ class EventsHandler(Handler):
             with torch.no_grad():
                 x = tensor_dict["x"]
                 x, metadata_dict = self.data_processor.preprocess(
-                    x, num_events_inpainted=None
+                    x,
+                    num_events_inpainted=None,
+                    training=True,
+                    non_conditioned_examples=non_conditioned_examples,
                 )
 
             # ========Train decoder =============
@@ -186,6 +190,10 @@ class EventsHandler(Handler):
                                 generated_duration += index2value["time_shift"][
                                     new_pitch_index
                                 ]
+                                # TODO: Change that, placeholder does not exists anyumore
+                                raise NotImplementedError(
+                                    "Change that, placeholder does not exists anyumore"
+                                )
                                 if generated_duration > placeholder_duration:
                                     decoding_end = event_index + 1
                                     for channel_index_local in range(

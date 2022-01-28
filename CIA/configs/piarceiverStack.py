@@ -13,8 +13,6 @@ config = {
             "velocity_shift": True,
             "transposition": True,
         },
-        offset_beginning=-(known_suffix_length - 1),
-        offset_end=-known_suffix_length,
     ),
     # --- DataProcessor ---
     "data_processor_kwargs": dict(

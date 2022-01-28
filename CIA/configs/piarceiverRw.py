@@ -1,25 +1,28 @@
 from pathlib import Path
 
-known_suffix_length = 64
+sequences_size = 1024
+num_events_context = sequences_size // 4
+num_event_local_window = 64
 downscale = 16
-num_events_context = 256
+offset_beginning = sequences_size - sequences_size // 4
+offset_end = sequences_size - offset_beginning
 config = {
     "dataset": "piano",
     # --- Dataloader ---
     "dataloader_generator_kwargs": dict(
-        sequences_size=1024,
+        sequences_size=sequences_size,
         transformations={
             "time_dilation": True,
             "velocity_shift": True,
             "transposition": True,
         },
-        offset_beginning=-(known_suffix_length - 1),
-        offset_end=-known_suffix_length,
+        offset_beginning=-offset_beginning,
+        offset_end=-offset_end,
     ),
     # --- DataProcessor ---
     "data_processor_kwargs": dict(
         embedding_size=64,
-        num_events_local_window=known_suffix_length,
+        num_events_local_window=num_event_local_window,
         num_events_context=num_events_context,
         reverse_prefix=False,  # only for prefixEnd
     ),  # Can be different from the encoder's data processor
@@ -63,6 +66,7 @@ config = {
     ),
     # ======== Training ========
     "compute_loss_prefix": True,
+    "non_conditioned_examples": True,
     "lr": 1e-4,
     "batch_size": 7,
     "num_batches": 64,

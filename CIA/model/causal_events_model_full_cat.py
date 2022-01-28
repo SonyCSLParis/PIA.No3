@@ -226,7 +226,6 @@ class CausalEventsModelFullCat(nn.Module):
                 value=weights_per_category,
                 target=target,
                 mask=loss_mask,
-                label_smoothing=self.label_smoothing,
             )
 
             return {

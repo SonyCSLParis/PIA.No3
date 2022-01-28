@@ -12,7 +12,7 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                "--config=CIA/configs/piarceiverRwNullMasking.py",
+                "--config=CIA/configs/piarceiverRw.py",
                 "-t",
                 "--num_workers=0"
             ],

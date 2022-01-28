@@ -1,26 +1,27 @@
 """
 @author: Gaetan Hadjeres
 """
-from CIA.utils import get_free_port
-from CIA.positional_embeddings.positional_embedding import PositionalEmbedding
 import importlib
 import os
 import shutil
-from datetime import datetime
 import time
+from datetime import datetime
+
 import click
 import torch
-
-import torch.multiprocessing as mp
 import torch.distributed as dist
+import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel
+
 from CIA.getters import (
     get_data_processing,
-    get_model,
     get_handler,
+    get_model,
     get_positional_embedding,
     get_sos_embedding,
 )
+from CIA.positional_embeddings.positional_embedding import PositionalEmbedding
+from CIA.utils import get_free_port
 
 
 @click.command()
@@ -144,6 +145,7 @@ def main(rank, train, load, overfitted, config, num_workers, world_size, model_d
             plot=True,
             num_workers=num_workers,
             compute_loss_prefix=config["compute_loss_prefix"],
+            non_conditioned_examples=config["non_conditioned_examples"],
         )
         exit()
 
@@ -163,7 +165,7 @@ def main(rank, train, load, overfitted, config, num_workers, world_size, model_d
             )
             original_x = next(generator_val)["x"]
             x, metadata_dict = data_processor.preprocess(
-                original_x, num_events_inpainted=None
+                original_x, num_events_inpainted=None, training=False
             )
         else:
             # read midi file
@@ -183,7 +185,9 @@ def main(rank, train, load, overfitted, config, num_workers, world_size, model_d
             ).unsqueeze(0)
             # preprocess
             x, metadata_dict = data_processor.preprocess(
-                original_x, num_events_middle=exemple["num_events_middle"]
+                original_x,
+                num_events_middle=exemple["num_events_middle"],
+                training=False,
             )
 
         # reconstruct original sequence to check post-processing

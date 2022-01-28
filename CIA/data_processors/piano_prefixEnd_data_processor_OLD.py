@@ -24,7 +24,7 @@ class PianoPrefixEndDataProcessor(DataProcessor):
             num_events=num_events,
             num_tokens_per_channel=num_tokens_per_channel,
             add_mask_token=True,
-            num_additional_tokens=2,  # sod and eod
+            num_additional_tokens=2,
         )
         # We need full access to the dataset and dataloader_generator
         self.dataloader_generator = dataloader_generator
@@ -70,8 +70,6 @@ class PianoPrefixEndDataProcessor(DataProcessor):
         )
 
         self.reverse_prefix = reverse_prefix
-        if reverse_prefix:
-            raise NotImplementedError
 
     def reverse(self, x):
         """Reverse midi sequence"""
@@ -131,10 +129,18 @@ class PianoPrefixEndDataProcessor(DataProcessor):
 
         x = cuda_variable(x.long())
 
-        num_meta_events = 2  # the 2 accounts for the SOD and EOD tokens
+        num_events_suffix = num_events_inpainted
+        # the 2 accounts for the SOD and EOD tokens
+        num_meta_events = 2
         max_num_events_suffix = (
-            sequences_size - self.num_events_context - num_meta_events
+            sequences_size - (self.num_events_context + num_meta_events) - 1
         )
+        if num_events_suffix is None:
+            num_events_suffix = random.randint(1, max_num_events_suffix)
+
+        # Slice x
+        x = x[:, : self.num_events_context + num_events_suffix]
+        batch_size, num_events, _ = x.size()
 
         # === Find end and start tokens in x
         is_start_token = x[:, :, 0] == self.start_tokens[0].unsqueeze(0).unsqueeze(
@@ -146,25 +152,28 @@ class PianoPrefixEndDataProcessor(DataProcessor):
         contains_start_token = is_start_token.sum(1) >= 1
         contains_end_token = is_end_token.sum(1) >= 1
         # only one of those per sequence
-        # Only valid when contains_end_token!!
+        # Only valid when containes_end_token!!
         start_token_location = torch.argmax(is_start_token.long(), dim=1)
         end_token_location = torch.argmax(is_end_token.long(), dim=1)
-        start_ind = torch.where(
-            contains_start_token,
-            start_token_location,
-            torch.zeros_like(start_token_location),
-        )
-        end_ind = torch.where(
-            contains_end_token,
-            end_token_location + 1,
-            num_events * torch.ones_like(end_token_location),
-        )
 
-        ys = []
-        ys_nonull = []
-        remaining_time_l = []
-        for batch_ind in range(batch_size):
-            # null conditioning
+        before = x[:, :num_events_suffix]
+        after = x[:, num_events_suffix : num_events_suffix + self.num_events_context]
+        remaining_time = self.dataloader_generator.get_elapsed_time(before)[:, -1]
+        placeholder_duration = self.dataloader_generator.get_elapsed_time(
+            before[:, self.num_events_local_window :]
+        )[:, -1]
+
+        prefix_list, suffix_list = [], []
+        prefix_list_nonull, suffix_list_nonull = [], []
+        # TODO batch this?!
+        for (b, a, c_start_token, c_end_token, start_token_l, end_token_l) in zip(
+            before,
+            after,
+            contains_start_token,
+            contains_end_token,
+            start_token_location,
+            end_token_location,
+        ):
             if non_conditioned_examples:
                 if training:
                     rand_float = random.random()
@@ -174,91 +183,150 @@ class PianoPrefixEndDataProcessor(DataProcessor):
             else:
                 null_masking_batch = False
 
-            # x_trim may contain start and end token if they were present in the sequence
-            x_trim = x[batch_ind, start_ind[batch_ind] : end_ind[batch_ind]]
-
-            # shorten randomly x_trim only if no end or start symbol at the end
-            x_trim_len = x_trim.size(0)
-            if x_trim_len == sequences_size:
-                x_trim_len = random.randint(1, sequences_size)
-                x_trim = x_trim[:x_trim_len]
-
-            # draw randomly the length of the suffix
-            max_len_suffix = min(x_trim_len - 1, max_num_events_suffix)
-            min_len_suffix = max(1, x_trim_len - self.num_events_context)
-            if num_events_inpainted is None:
-                num_events_suffix = random.randint(min_len_suffix, max_len_suffix)
-
-            # overwrite num_events_suffix to cover special cases in Ableton plug-in when there's no end provided by user
-            # we don't do the same w start because this case is cover by regular training
-            if contains_end_token[batch_ind] and (x_trim_len < max_num_events_suffix):
-                if bool(random.random() < 0.2):
-                    num_events_suffix = x_trim_len - 1
-
-            # split between prefix (= end) and suffix (= beginning)
-            suffix = x_trim[:num_events_suffix]
-            prefix = x_trim[num_events_suffix:]
-
-            # compute remaining time the suffix
-            remaining_time = self.dataloader_generator.get_elapsed_time(
-                suffix.unsqueeze(0)
-            )[:, -1]
-            remaining_time_l.append(remaining_time.squeeze())
-
-            # Asserts
+            # assert START is not in end
             assert not torch.any(
-                prefix[:, 0] == self.start_tokens[0]
-            ), "Start token located in prefix!"
-            assert not torch.any(
-                suffix[:, 0] == self.end_tokens[0]
-            ), "End token located in suffix"
+                after[:, :, 0] == self.start_tokens[0]
+            ), "Start token located in after!"
+            assert not (
+                c_start_token and (start_token_l >= num_events_suffix)
+            ), "Start token located in after"
+            # assert END is not in the first local_window tokens
+            assert not (
+                c_end_token and (end_token_l < self.num_events_local_window)
+            ), "End token located in local_window"
 
-            # prefix
-            pad_size_prefix = self.num_events_context - prefix.size(0)
-            assert pad_size_prefix >= 0
-            if pad_size_prefix != 0:
-                prefix = torch.cat(
-                    [
-                        prefix,
-                        self.pad_tokens.unsqueeze(0).repeat(pad_size_prefix, 1),
-                    ],
-                    dim=0,
-                )
-            prefix_nonull = prefix
+            ########################################################################
+            # Construction du prefix
+            if c_end_token and (end_token_l < num_events_suffix):
+                # END is in before
+                if self.reverse_prefix:
+                    prefix = torch.cat(
+                        [
+                            self.pad_tokens.unsqueeze(0).repeat(a.size(0) - 1, 1),
+                            self.end_tokens.unsqueeze(0),
+                        ],
+                        dim=0,
+                    )
+                else:
+                    prefix = torch.cat(
+                        [
+                            self.end_tokens.unsqueeze(0),
+                            self.pad_tokens.unsqueeze(0).repeat(a.size(0) - 1, 1),
+                        ],
+                        dim=0,
+                    )
+
+            else:
+                if self.reverse_prefix:
+                    prefix = self.reverse(a)
+                else:
+                    prefix = a
+            ########################################################################
+
+            ################################
+            # Safeguards, can be removed after a while
+            if torch.any(prefix[:, 0] == self.start_tokens[0]):
+                # START in after
+                raise Exception
+            if torch.any(prefix[:, 0] == self.pad_tokens[0]):
+                # PADS in after: there needs to be an END
+                # and they have to appear after END
+                assert torch.any(
+                    prefix[:, 0] == self.end_tokens[0]
+                ), "after contains PADS, but no END"
+                pads_locations = torch.where(
+                    prefix[:, 0] == self.pad_tokens[0].unsqueeze(0)
+                )[0]
+                end_location = torch.where(
+                    prefix[:, 0] == self.end_tokens[0].unsqueeze(0)
+                )[0]
+                assert end_location.shape[0] == 1, "several END in suffix"
+                if self.reverse_prefix:
+                    assert torch.all(
+                        pads_locations < end_location
+                    ), "PADS before ENDS in after in reversed prefix"
+                else:
+                    assert torch.all(
+                        pads_locations > end_location
+                    ), "PADS before ENDS in after"
+            ################################
+
             if null_masking_batch:
                 null_tokens = self.pad_tokens.unsqueeze(0).repeat(prefix.size(0), 1)
+                prefix_nonull = prefix
                 prefix = null_tokens
-
-            # suffix
-            pad_size_suffix = max_num_events_suffix - num_events_suffix
-            assert pad_size_suffix >= 0
-            if pad_size_suffix == 0:
-                suffix = torch.cat(
-                    [
-                        self.sod_symbols.unsqueeze(0),
-                        suffix,
-                        self.eod_symbols.unsqueeze(0),
-                    ],
-                    dim=0,
-                )
             else:
-                suffix = torch.cat(
-                    [
-                        self.sod_symbols.unsqueeze(0),
-                        suffix,
-                        self.eod_symbols.unsqueeze(0),
-                        self.pad_tokens.unsqueeze(0).repeat(pad_size_suffix, 1),
-                    ],
-                    dim=0,
+                prefix_nonull = prefix
+
+            ########################################################################
+            # Construction du suffix
+            if c_start_token and (start_token_l >= self.num_events_local_window):
+                # START is in before, but not in the local window.
+                # trim until START appears as the last element of the local window
+                # (we don't want the model to predict START tokens)
+                trim_begin = start_token_l - self.num_events_local_window + 1
+                suffix = b[trim_begin:]
+            elif c_end_token and (end_token_l < num_events_suffix):
+                # END token is in before.
+                # Remove END from suffix since it is appended later
+                suffix = b[:end_token_l]
+            else:
+                suffix = b
+            ########################################################################
+
+            ################################
+            # Safeguards, can be removed after running the code for a while with no exception
+            if torch.any(suffix[:, 0] == self.start_tokens[0]):
+                # check START position
+                start_location = torch.where(
+                    suffix[:, 0] == self.start_tokens[0].unsqueeze(0)
+                )[0]
+                assert start_location.shape[0] == 1, "several STARTS in suffix"
+                assert (
+                    start_location < self.num_events_local_window
+                ), "START appears after local window"
+            # No END in suffix (yet)
+            is_end_token = torch.any(suffix[:, 0] == self.end_tokens[0])
+            assert not is_end_token, "end token in suffix before end token is added"
+            ################################
+
+            # Now append end and pads
+            num_events_pad_end = sequences_size - (
+                self.num_events_context + len(suffix) + num_meta_events
+            )
+            assert num_events_pad_end > 0
+            suffix = torch.cat(
+                [
+                    suffix,
+                    self.end_tokens.unsqueeze(0),
+                    self.pad_tokens.unsqueeze(0).repeat(num_events_pad_end, 1),
+                ],
+                dim=0,
+            )
+
+            if null_masking_batch:
+                null_tokens = self.pad_tokens.unsqueeze(0).repeat(
+                    self.num_events_local_window - 1, 1
                 )
+                suffix_nonull = suffix
+                suffix[: self.num_events_local_window - 1] = null_tokens
+            else:
+                suffix_nonull = suffix
 
-            # creates final sequence
-            ys.append(torch.cat([prefix, suffix], dim=0))
-            ys_nonull.append(torch.cat([prefix_nonull, suffix], dim=0))
+            assert len(prefix) + len(suffix) == sequences_size - 1
+            prefix_list.append(prefix)
+            suffix_list.append(suffix)
+            prefix_list_nonull.append(prefix_nonull)
+            suffix_list_nonull.append(suffix_nonull)
 
-        y = torch.stack(ys, dim=0)
-        y_nonull = torch.stack(ys_nonull, dim=0)
-        remaining_time = torch.stack(remaining_time_l, dim=0)
+        prefix_tensor = torch.stack(prefix_list, dim=0)
+        suffix_tensor = torch.stack(suffix_list, dim=0)
+        prefix_tensor_nonull = torch.stack(prefix_list_nonull, dim=0)
+        suffix_tensor_nonull = torch.stack(suffix_list_nonull, dim=0)
+        sod = self.sod_symbols.unsqueeze(0).unsqueeze(0).repeat(batch_size, 1, 1)
+        # creates final sequence
+        y = torch.cat([prefix_tensor, sod, suffix_tensor], dim=1)
+        y_nonull = torch.cat([prefix_tensor_nonull, sod, suffix_tensor_nonull], dim=1)
 
         # recompute padding mask
         _, num_events_output, _ = y.size()
@@ -271,14 +339,30 @@ class PianoPrefixEndDataProcessor(DataProcessor):
         start_mask = y[:, :, :] == self.start_tokens.unsqueeze(0).unsqueeze(0).repeat(
             batch_size, num_events_output, 1
         )
-        end_mask = y[:, :, :] == self.end_tokens.unsqueeze(0).unsqueeze(0).repeat(
-            batch_size, num_events_output, 1
-        )
-        final_mask = padding_mask + sod_mask + start_mask + end_mask
-        # final_mask[:, : self.num_events_context] = True  # remove prefix
+        final_mask = padding_mask + sod_mask + start_mask
+        # add local windows, we only want "valid" local windows
+        final_mask[:, : self.num_events_local_window, :] = True
+        final_mask[
+            :,
+            self.num_events_context
+            + 1 : self.num_events_context
+            + 1
+            + self.num_events_local_window,
+            :,
+        ] = True
 
+        # decoding_start and decoding_end
+        decoding_start = self.num_events_context + self.num_events_local_window + 1
+        # valid_suffix_len = torch.where(suffix_tensor[:, :, 0] == self.end_tokens[0])[0][0] + 1
+        # decoding_end = (self.num_events_context + 1 + valid_suffix_len)
+
+        # self.num_events_before + self.num_events_after + 1 is the location
+        # of the SOD symbol (only the placeholder is added)
         metadata_dict = {
+            "placeholder_duration": placeholder_duration,
             "remaining_time": remaining_time,
+            "decoding_start": decoding_start,
+            # "decoding_end": None,
             "original_sequence": y,
             "original_sequence_nonull": y_nonull,
             "loss_mask": final_mask,

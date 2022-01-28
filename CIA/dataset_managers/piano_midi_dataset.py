@@ -72,25 +72,23 @@ class PianoMidiDataset(data.Dataset):
         """
         super().__init__()
         self.split = None
-        pad_before = -offset_beginning
-        if type(pad_before) == int:
-            assert (pad_before > 0) and (
-                pad_before < sequence_size
-            ), "wrong pad_before size"
-            self.pad_before = pad_before
+        if type(offset_beginning) == int:
+            assert (offset_beginning <= 0) and (
+                offset_beginning > -sequence_size
+            ), "wrong offset_beginning size"
+            self.offset_beginning = offset_beginning
         else:
-            if pad_before:
-                self.pad_before = sequence_size
+            if offset_beginning:
+                self.offset_beginning = sequence_size
             else:
-                self.pad_before = 1
+                self.offset_beginning = 1
 
-        pad_after = offset_end  # poor notation... pad_after is negativeto shift start of sequence to the left
-        if type(pad_after) == int:
+        if type(offset_end) == int:
             # can be negative to force sequences to be longer than a certain size
-            assert pad_after < sequence_size, "wrong pad_after size"
-            self.pad_after = pad_after
+            assert offset_end > -sequence_size, "wrong offset_end size"
+            self.offset_end = offset_end
         else:
-            self.pad_after = 0
+            self.offset_end = 0
 
         self.list_ids = {"train": [], "validation": [], "test": []}
 
@@ -154,12 +152,8 @@ class PianoMidiDataset(data.Dataset):
             f"{self.sequence_size}_"
             f"{self.smallest_time_shift}"
         )
-        if self.pad_before == self.sequence_size:
-            name += "_padbefore"
-        elif self.pad_before > 1:
-            name += f"_padbefore{self.pad_before}"
-        if self.pad_after != 0:
-            name += f"_padafter{self.pad_after}"
+        name += f"_offBeg{self.offset_beginning}"
+        name += f"_offEnd{self.offset_end}"
         return name
 
     def __len__(self):
@@ -581,8 +575,8 @@ class PianoMidiDataset(data.Dataset):
                 # split in chunks
                 # WARNING difference between self.sequence_size (size of the returned sequences) and sequence_length
                 # (actual size of the file)
-                start_at = -self.pad_before
-                end_at = sequence_length + self.pad_after
+                start_at = self.offset_beginning
+                end_at = sequence_length + self.offset_end
                 for start_time in range(start_at, end_at, self.hop_size):
                     chunk_counter[split] += 1
                     self.list_ids[split].append(

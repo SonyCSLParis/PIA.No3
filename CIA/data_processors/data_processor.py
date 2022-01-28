@@ -23,14 +23,16 @@ class DataProcessor(nn.Module):
         super(DataProcessor, self).__init__()
         self.embedding_size = embedding_size
         self.num_events = num_events
-        self.num_tokens_per_channel = num_tokens_per_channel
+        self.num_tokens_per_channel = [
+            e + num_additional_tokens for e in num_tokens_per_channel
+        ]
         self.num_tokens = self.num_events * len(self.num_tokens_per_channel)
         self.num_channels = len(self.num_tokens_per_channel)
 
         additional_token = num_additional_tokens if add_mask_token else 0
         self.embeddings = nn.ModuleList(
             [
-                nn.Embedding(num_embeddings + additional_token, self.embedding_size)
+                nn.Embedding(num_embeddings, self.embedding_size)
                 for num_embeddings in self.num_tokens_per_channel
             ]
         )
