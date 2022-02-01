@@ -45,6 +45,7 @@ class EventsHandler(Handler):
         non_conditioned_examples,
     ):
         means = None
+        lists = None
 
         if train:
             self.train()
@@ -90,14 +91,18 @@ class EventsHandler(Handler):
             means = {
                 key: value + means[key] for key, value in monitored_quantities.items()
             }
-
             del loss
+
+            if lists is None:
+                lists = dict(prefix_len=[], suffix_len=[])
+            lists["prefix_len"] += metadata_dict["prefix_len"]
+            lists["suffix_len"] += metadata_dict["suffix_len"]
 
         # renormalize monitored quantities
         for key, value in means.items():
             means[key] = all_reduce_scalar(value, average=True) / (sample_id + 1)
 
-        return means
+        return means, lists
 
     def inpaint(
         self,

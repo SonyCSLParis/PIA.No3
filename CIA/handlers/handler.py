@@ -101,13 +101,22 @@ class Handler:
         self.model.load_state_dict(state_dict=state_dict)
 
     def plot(
-        self, epoch_id, monitored_quantities_train, monitored_quantities_val
+        self,
+        epoch_id,
+        monitored_quantities_train,
+        monitored_quantities_val,
+        lists_train,
+        lists_val,
     ) -> None:
         if is_main_process():
             for k, v in monitored_quantities_train.items():
                 self.writer.add_scalar(f"{k}/train", v, epoch_id)
             for k, v in monitored_quantities_val.items():
                 self.writer.add_scalar(f"{k}/val", v, epoch_id)
+            for k, v in lists_train.items():
+                self.writer.add_histogram(f"{k}/train", torch.tensor(v), epoch_id)
+            for k, v in lists_val.items():
+                self.writer.add_histogram(f"{k}/val", torch.tensor(v), epoch_id)
 
     def train_model(
         self,
@@ -134,7 +143,7 @@ class Handler:
                 batch_size=batch_size, shuffle_val=True
             )
 
-            monitored_quantities_train = self.epoch(
+            monitored_quantities_train, lists_train = self.epoch(
                 data_loader=generator_train,
                 train=True,
                 num_batches=num_batches,
@@ -144,7 +153,7 @@ class Handler:
             del generator_train
 
             with torch.no_grad():
-                monitored_quantities_val = self.epoch(
+                monitored_quantities_val, lists_val = self.epoch(
                     data_loader=generator_val,
                     train=False,
                     num_batches=num_batches // 2 if num_batches is not None else None,
@@ -169,7 +178,11 @@ class Handler:
 
             if plot:
                 self.plot(
-                    epoch_id, monitored_quantities_train, monitored_quantities_val
+                    epoch_id,
+                    monitored_quantities_train,
+                    monitored_quantities_val,
+                    lists_train,
+                    lists_val,
                 )
 
     def epoch(self, data_loader, train=True, num_batches=None):

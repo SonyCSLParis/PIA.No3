@@ -23,7 +23,6 @@ class PianoPrefixEndDataProcessor(DataProcessor):
             embedding_size=embedding_size,
             num_events=num_events,
             num_tokens_per_channel=num_tokens_per_channel,
-            add_mask_token=True,
             num_additional_tokens=2,  # sod and eod
         )
         # We need full access to the dataset and dataloader_generator
@@ -163,6 +162,8 @@ class PianoPrefixEndDataProcessor(DataProcessor):
         ys = []
         ys_nonull = []
         remaining_time_l = []
+        suffix_len = []
+        prefix_len = []
         for batch_ind in range(batch_size):
             # null conditioning
             if non_conditioned_examples:
@@ -179,8 +180,8 @@ class PianoPrefixEndDataProcessor(DataProcessor):
 
             # shorten randomly x_trim only if no end or start symbol at the end
             x_trim_len = x_trim.size(0)
-            if x_trim_len == sequences_size:
-                x_trim_len = random.randint(1, sequences_size)
+            if x_trim_len > sequences_size - 2:
+                x_trim_len = random.randint(10, sequences_size - 2)
                 x_trim = x_trim[:x_trim_len]
 
             # draw randomly the length of the suffix
@@ -198,6 +199,8 @@ class PianoPrefixEndDataProcessor(DataProcessor):
             # split between prefix (= end) and suffix (= beginning)
             suffix = x_trim[:num_events_suffix]
             prefix = x_trim[num_events_suffix:]
+            suffix_len.append(len(suffix))
+            prefix_len.append(len(prefix))
 
             # compute remaining time the suffix
             remaining_time = self.dataloader_generator.get_elapsed_time(
@@ -282,6 +285,8 @@ class PianoPrefixEndDataProcessor(DataProcessor):
             "original_sequence": y,
             "original_sequence_nonull": y_nonull,
             "loss_mask": final_mask,
+            "suffix_len": suffix_len,
+            "prefix_len": prefix_len,
         }
         return y, metadata_dict
 
