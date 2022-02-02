@@ -31,9 +31,6 @@ class Handler:
     def forward(self, target, metadata_dict, compute_loss_prefix):
         return self.model.forward(target, metadata_dict, compute_loss_prefix)
 
-    def forward_step(self, target, metadata_dict, decoding_index):
-        return self.model.module.forward_step(target, metadata_dict, decoding_index)
-
     def recurrent_step(self, target, metadata_dict, states, decoding_index):
         return self.model.module.recurrent_step(
             target, metadata_dict, states, decoding_index
@@ -113,10 +110,10 @@ class Handler:
                 self.writer.add_scalar(f"{k}/train", v, epoch_id)
             for k, v in monitored_quantities_val.items():
                 self.writer.add_scalar(f"{k}/val", v, epoch_id)
-            for k, v in lists_train.items():
-                self.writer.add_histogram(f"{k}/train", torch.tensor(v), epoch_id)
-            for k, v in lists_val.items():
-                self.writer.add_histogram(f"{k}/val", torch.tensor(v), epoch_id)
+            # for k, v in lists_train.items():
+            #     self.writer.add_histogram(f"{k}/train", torch.tensor(v), epoch_id)
+            # for k, v in lists_val.items():
+            #     self.writer.add_histogram(f"{k}/val", torch.tensor(v), epoch_id)
 
     def train_model(
         self,

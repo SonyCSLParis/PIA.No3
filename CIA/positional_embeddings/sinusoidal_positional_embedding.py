@@ -46,12 +46,3 @@ class SinusoidalPositionalEmbedding(BasePositionalEmbedding):
 
         x = torch.cat([x, pos_embedding], dim=2)
         return self.dropout(x)
-
-    def forward_step(self, x, i=0, h=None, metadata_dict={}):
-        if not self.expand_channels:
-            raise NotImplementedError
-        pe_index = i // self.num_channels
-        pos_embedding = self.pe[:, pe_index].repeat(x.size(0), 1)
-
-        x = torch.cat([x, pos_embedding], dim=1)
-        return self.dropout(x)
