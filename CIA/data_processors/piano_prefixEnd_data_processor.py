@@ -29,6 +29,7 @@ class PianoPrefixEndDataProcessor(DataProcessor):
         self.dataloader_generator = dataloader_generator
         self.num_events_local_window = num_events_local_window
         self.num_events_context = num_events_context
+        self.num_meta_events = 2  # the 2 accounts for the SOD and EOD tokens
 
         # Start of decoding
         self.sod_symbols = nn.Parameter(
@@ -130,9 +131,8 @@ class PianoPrefixEndDataProcessor(DataProcessor):
 
         x = cuda_variable(x.long())
 
-        num_meta_events = 2  # the 2 accounts for the SOD and EOD tokens
         max_num_events_suffix = (
-            sequences_size - self.num_events_context - num_meta_events
+            sequences_size - self.num_events_context - self.num_meta_events
         )
 
         # === Find end and start tokens in x
@@ -318,7 +318,7 @@ class PianoPrefixEndDataProcessor(DataProcessor):
 
         return elapsed_time
 
-    def postprocess(self, x, decoding_end, metadata_dict):
+    def postprocess(self, x):
         before = x[:, self.num_events_context + 1 :].to(self.end_tokens.device)
 
         # trim end

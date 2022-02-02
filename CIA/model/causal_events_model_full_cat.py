@@ -177,62 +177,50 @@ class CausalEventsModelFullCat(nn.Module):
             loss_mask = torch.ones_like(target)
 
         # If prefix mode, we keep track of the two separate losses
-        if "decoding_start" in metadata_dict:
-            decoding_start = metadata_dict["decoding_start"]
+        decoding_start = (
+            self.data_processor.num_events_context + self.data_processor.num_meta_events
+        )
 
-            if compute_loss_prefix:
-                weights_prefix = [
-                    weight[:, :decoding_start] for weight in weights_per_category
-                ]
-                target_prefix = target[:, :decoding_start]
-                loss_mask_prefix = loss_mask[:, :decoding_start]
-                loss_prefix = categorical_crossentropy(
-                    value=weights_prefix,
-                    target=target_prefix,
-                    mask=loss_mask_prefix,
-                    label_smoothing=False,
-                )
-
-            weights_inpainting = [
-                weight[:, decoding_start:] for weight in weights_per_category
+        if compute_loss_prefix:
+            weights_prefix = [
+                weight[:, :decoding_start] for weight in weights_per_category
             ]
-            target_inpainting = target[:, decoding_start:]
-            loss_mask_inpainting = loss_mask[:, decoding_start:]
-            loss_inpainting = categorical_crossentropy(
-                value=weights_inpainting,
-                target=target_inpainting,
-                mask=loss_mask_inpainting,
+            target_prefix = target[:, :decoding_start]
+            loss_mask_prefix = loss_mask[:, :decoding_start]
+            loss_prefix = categorical_crossentropy(
+                value=weights_prefix,
+                target=target_prefix,
+                mask=loss_mask_prefix,
                 label_smoothing=False,
             )
 
-            if compute_loss_prefix:
-                loss = loss_prefix * 0.1 + loss_inpainting * 0.9
-            else:
-                loss = loss_inpainting
-                loss_prefix = torch.zeros_like(loss)
+        weights_inpainting = [
+            weight[:, decoding_start:] for weight in weights_per_category
+        ]
+        target_inpainting = target[:, decoding_start:]
+        loss_mask_inpainting = loss_mask[:, decoding_start:]
+        loss_inpainting = categorical_crossentropy(
+            value=weights_inpainting,
+            target=target_inpainting,
+            mask=loss_mask_inpainting,
+            label_smoothing=False,
+        )
 
-            return {
-                "loss": loss,
-                "weights_per_category": weights_per_category,
-                "monitored_quantities": {
-                    "loss": loss.item(),
-                    "loss_prefix": loss_prefix.item(),
-                    "loss_inpainting": loss_inpainting.item(),
-                },
-            }
-
+        if compute_loss_prefix:
+            loss = loss_prefix * 0.1 + loss_inpainting * 0.9
         else:
-            loss = categorical_crossentropy(
-                value=weights_per_category,
-                target=target,
-                mask=loss_mask,
-            )
+            loss = loss_inpainting
+            loss_prefix = torch.zeros_like(loss)
 
-            return {
-                "loss": loss,
-                "weights_per_category": weights_per_category,
-                "monitored_quantities": {"loss": loss.item()},
-            }
+        return {
+            "loss": loss,
+            "weights_per_category": weights_per_category,
+            "monitored_quantities": {
+                "loss": loss.item(),
+                "loss_prefix": loss_prefix.item(),
+                "loss_inpainting": loss_inpainting.item(),
+            },
+        }
 
     def event_state_to_weights(self, output, target_embedded):
         weights_per_category = []
