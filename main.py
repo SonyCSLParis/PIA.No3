@@ -156,7 +156,11 @@ def main(rank, train, load, overfitted, config, num_workers, world_size, model_d
     # exemple = dict(path='/home/leo/Data/databases/Piano/ecomp_piano_dataset/Abdelmola01.MID', num_events_middle=500,
     #                start=0)
     exemple = None
-    num_generations = 5
+    num_generations = 1
+
+    # null_superconditioning
+    # null_superconditioning = None
+    null_superconditioning = [1, 1.5, 2, 2.5]
 
     for _ in range(num_generations):
         if exemple is None:  # use dataloader
@@ -164,9 +168,13 @@ def main(rank, train, load, overfitted, config, num_workers, world_size, model_d
                 batch_size=1, shuffle_val=True
             )
             original_x = next(generator_val)["x"]
-            x, metadata_dict = data_processor.preprocess(
-                original_x, num_events_inpainted=None, training=False
+            _, metadata_dict = data_processor.preprocess(
+                original_x,
+                num_events_inpainted=100,
+                training=False,
+                non_conditioned_examples=(null_superconditioning is not None),
             )
+            x = metadata_dict["original_sequence"]
         else:
             # read midi file
             x = dataloader_generator.dataset.process_score(exemple["path"])
@@ -184,11 +192,12 @@ def main(rank, train, load, overfitted, config, num_workers, world_size, model_d
                 dim=-1,
             ).unsqueeze(0)
             # preprocess
-            x, metadata_dict = data_processor.preprocess(
+            _, metadata_dict = data_processor.preprocess(
                 original_x,
                 num_events_middle=exemple["num_events_middle"],
                 training=False,
             )
+            x = metadata_dict["original_sequence"]
 
         # reconstruct original sequence to check post-processing
         # x_postprocess = data_processor.postprocess(
@@ -200,26 +209,31 @@ def main(rank, train, load, overfitted, config, num_workers, world_size, model_d
         start_time = time.time()
         (
             x_gen,
-            generated_region,
+            _,
             decoding_end,
             num_event_generated,
-            done,
-        ) = model_handler.inpaint(
+            _,
+        ) = model_handler.inpaint_non_optimized_superconditioning(
             x=x.clone(),
             metadata_dict=metadata_dict,
             temperature=1.0,
             top_p=0.95,
             top_k=0,
+            regenerate_first_ts=False,
+            null_superconditioning=null_superconditioning,
         )
         end_time = time.time()
         ############################################################
-        x_inpainted = data_processor.postprocess(x_gen, decoding_end, metadata_dict)
+        x_inpainted = data_processor.postprocess(x_gen, decoding_end)
 
         # Timing infos
-        print(f"Num events_generated: {num_event_generated}")
-        print(f"Time generation: {end_time - start_time}")
+        if type(num_event_generated) == int:
+            num_event_generated = [num_event_generated] * len(x)
+        print(f"Num events_generated: {[e for e in num_event_generated]}")
+        print(f"Time generation: {(end_time - start_time) / len(num_event_generated)}")
+        average_time_list = [(end_time - start_time) / e for e in num_event_generated]
         print(
-            f"Average time per generated event: {(end_time - start_time) / num_event_generated}"
+            f"Average time per generated event: {sum(average_time_list) / float(len(average_time_list))}"
         )
 
         # Saving
@@ -227,16 +241,18 @@ def main(rank, train, load, overfitted, config, num_workers, world_size, model_d
         if not os.path.exists(f"{model_handler.model_dir}/generations"):
             os.mkdir(f"{model_handler.model_dir}/generations")
         for k, tensor_score in enumerate(x_inpainted):
-            path_no_extension = f"{model_handler.model_dir}/generations/{timestamp}_{k}"
+            if null_superconditioning is not None:
+                path_no_extension = f"{model_handler.model_dir}/generations/{timestamp}_null{null_superconditioning[k]}"
+            else:
+                path_no_extension = (
+                    f"{model_handler.model_dir}/generations/{timestamp}_{k}"
+                )
             model_handler.dataloader_generator.write(tensor_score, path_no_extension)
         for k, tensor_score in enumerate(original_x):
             path_no_extension = (
                 f"{model_handler.model_dir}/generations/{timestamp}_{k}_original"
             )
             model_handler.dataloader_generator.write(tensor_score, path_no_extension)
-        # for k, tensor_score in enumerate(x_postprocess):
-        #     path_no_extension = f"{decoder_handler.model_dir}/generations/{timestamp}_{k}_original_postprocess"
-        #     decoder_handler.dataloader_generator.write(tensor_score, path_no_extension)
 
 
 if __name__ == "__main__":

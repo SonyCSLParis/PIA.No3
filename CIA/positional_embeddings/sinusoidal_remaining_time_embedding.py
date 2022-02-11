@@ -37,10 +37,6 @@ class SinusoidalRemainingTimeEmbedding(BasePositionalEmbedding):
         ################################################
         # zero remaining_time in prefix
         remaining_time[:, : self.data_processor.num_events_context] = 0
-        # make sure negative values are very small and only due to rounding/quantization errors
-        assert torch.all(
-            remaining_time >= -9e-3
-        ), f"negative remaining_time values: {torch.min(remaining_time)}"
         # zero negative values
         remaining_time = torch.where(
             remaining_time < 0.0, torch.zeros_like(remaining_time), remaining_time

@@ -28,7 +28,7 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                "--config=models/piarceiverRw_2022-01-05_12:13:44/config.py",
+                "--config=models/piarceiverRw_2022-02-02_09:36:13/config.py",
                 "-o",
                 "-l",
                 "--num_workers=0"

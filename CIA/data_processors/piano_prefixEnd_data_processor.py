@@ -129,6 +129,9 @@ class PianoPrefixEndDataProcessor(DataProcessor):
         assert num_events == sequences_size
         assert sequences_size > self.num_events_context + self.num_events_local_window
 
+        if not training:
+            assert batch_size == 1
+
         x = cuda_variable(x.long())
 
         max_num_events_suffix = (
@@ -160,47 +163,71 @@ class PianoPrefixEndDataProcessor(DataProcessor):
         )
 
         ys = []
-        ys_nonull = []
         remaining_time_l = []
         suffix_len = []
         prefix_len = []
         for batch_ind in range(batch_size):
             # null conditioning
-            if non_conditioned_examples:
-                if training:
-                    rand_float = random.random()
-                    null_masking_batch = bool(rand_float < 0.2)
-                else:
-                    null_masking_batch = True
+            if non_conditioned_examples and training:
+                rand_float = random.random()
+                null_masking_batch = bool(rand_float < 0.1)
             else:
                 null_masking_batch = False
 
             # x_trim may contain start and end token if they were present in the sequence
             x_trim = x[batch_ind, start_ind[batch_ind] : end_ind[batch_ind]]
-
-            # shorten randomly x_trim only if no end or start symbol at the end
             x_trim_len = x_trim.size(0)
+            # shorten randomly x_trim only if no end or start symbol at the end
             if x_trim_len > sequences_size - 2:
-                x_trim_len = random.randint(10, sequences_size - 2)
-                x_trim = x_trim[:x_trim_len]
+                if training:
+                    x_trim_len = random.randint(10, sequences_size - 2)
+                    x_trim = x_trim[:x_trim_len]
+                else:
+                    x_trim_len = sequences_size - 2
+                    x_trim = x_trim[:x_trim_len]
 
-            # draw randomly the length of the suffix
-            max_len_suffix = min(x_trim_len - 1, max_num_events_suffix)
-            min_len_suffix = max(1, x_trim_len - self.num_events_context)
-            if num_events_inpainted is None:
-                num_events_suffix = random.randint(min_len_suffix, max_len_suffix)
+            if training:
+                # draw randomly the length of the suffix
+                max_len_suffix = min(x_trim_len - 1, max_num_events_suffix)
+                min_len_suffix = max(1, x_trim_len - self.num_events_context)
+                if num_events_inpainted is None:
+                    num_events_suffix = random.randint(min_len_suffix, max_len_suffix)
 
-            # overwrite num_events_suffix to cover special cases in Ableton plug-in when there's no end provided by user
-            # we don't do the same w start because this case is cover by regular training
-            if contains_end_token[batch_ind] and (x_trim_len < max_num_events_suffix):
-                if bool(random.random() < 0.2):
-                    num_events_suffix = x_trim_len - 1
+                # overwrite num_events_suffix to cover special cases in Ableton plug-in when there's no end provided by user
+                # we don't do the same w start because this case is cover by regular training
+                if contains_end_token[batch_ind] and (
+                    x_trim_len < max_num_events_suffix
+                ):
+                    if bool(random.random() < 0.2):
+                        num_events_suffix = x_trim_len - 1
+            else:
+                if num_events_inpainted is None:
+                    num_events_prefix = min(
+                        x_trim_len // 4 + 1, self.num_events_context
+                    )
+                    num_events_suffix = x_trim_len - num_events_prefix
+                    decoding_start_suffix = min(
+                        num_events_suffix // 4, self.num_events_context
+                    )
+                else:
+                    x_trim_len
 
             # split between prefix (= end) and suffix (= beginning)
             suffix = x_trim[:num_events_suffix]
             prefix = x_trim[num_events_suffix:]
             suffix_len.append(len(suffix))
             prefix_len.append(len(prefix))
+
+            if training:
+                decoding_start = None
+                inpaint_zone_duration = None
+            else:
+                mid_part = suffix[decoding_start_suffix:]
+                inpaint_zone_duration = self.dataloader_generator.get_elapsed_time(
+                    mid_part.unsqueeze(0)
+                )[:, -1]
+                inpaint_zone_duration = inpaint_zone_duration.item()
+                decoding_start = decoding_start_suffix + self.num_events_context
 
             # compute remaining time the suffix
             remaining_time = self.dataloader_generator.get_elapsed_time(
@@ -227,7 +254,6 @@ class PianoPrefixEndDataProcessor(DataProcessor):
                     ],
                     dim=0,
                 )
-            prefix_nonull = prefix
             if null_masking_batch:
                 null_tokens = self.pad_tokens.unsqueeze(0).repeat(prefix.size(0), 1)
                 prefix = null_tokens
@@ -257,10 +283,8 @@ class PianoPrefixEndDataProcessor(DataProcessor):
 
             # creates final sequence
             ys.append(torch.cat([prefix, suffix], dim=0))
-            ys_nonull.append(torch.cat([prefix_nonull, suffix], dim=0))
 
         y = torch.stack(ys, dim=0)
-        y_nonull = torch.stack(ys_nonull, dim=0)
         remaining_time = torch.stack(remaining_time_l, dim=0)
 
         # recompute padding mask
@@ -283,16 +307,17 @@ class PianoPrefixEndDataProcessor(DataProcessor):
         metadata_dict = {
             "remaining_time": remaining_time,
             "original_sequence": y,
-            "original_sequence_nonull": y_nonull,
             "loss_mask": final_mask,
-            "suffix_len": suffix_len,
-            "prefix_len": prefix_len,
+            "decoding_start": decoding_start,  # only used for generating
+            "inpaint_zone_duration": inpaint_zone_duration,
+            "suffix_len": suffix_len,  # for monitoring
+            "prefix_len": prefix_len,  # for monitoring
         }
         return y, metadata_dict
 
     def compute_elapsed_time(self, metadata_dict):
         # original sequence is in prefix order!
-        x = metadata_dict["original_sequence_nonull"]
+        x = metadata_dict["original_sequence"]
         elapsed_time = self.dataloader_generator.get_elapsed_time(x)
         # shift to right so that elapsed_time[0] = 0
         elapsed_time = torch.cat(
@@ -318,47 +343,23 @@ class PianoPrefixEndDataProcessor(DataProcessor):
 
         return elapsed_time
 
-    def postprocess(self, x):
-        before = x[:, self.num_events_context + 1 :].to(self.end_tokens.device)
-
-        # trim end
-        num_events = before.shape[1]
-        is_end_token = before[:, :, 0] == self.end_tokens[0].unsqueeze(0).unsqueeze(
-            0
-        ).repeat(1, num_events)
-        contains_end_token = is_end_token.sum(1) == 1
-        if contains_end_token:
-            end_token_location = torch.argmax(is_end_token.long(), dim=1)
-        else:
-            if is_end_token.sum(1) > 1:
-                raise Exception("more than 1 END token generated in suffix")
-            else:
-                raise Exception("no END token generated in suffix")
-        before = before[:end_token_location]
-
-        # trim start
-        num_events = before.shape[1]
-        is_start_token = before[:, :, 0] == self.start_tokens[0].unsqueeze(0).unsqueeze(
-            0
-        ).repeat(1, num_events)
-        contains_start_token = is_start_token.sum(1) == 1
-        if contains_start_token:
-            start_token_location = torch.argmax(is_start_token.long(), dim=1)
-            before = before[start_token_location + 1 :]
-
-        after = x[:, : self.num_events_context].to(self.end_tokens.device)
-        if self.reverse_prefix:
-            after = self.dereverse(after)
-        # trim end
-        num_events = after.shape[1]
-        is_end_token = after[:, :, 0] == self.end_tokens[0].unsqueeze(0).unsqueeze(
-            0
-        ).repeat(1, num_events)
-        contains_end_token = is_end_token.sum(1) == 1
-        if contains_end_token:
-            end_token_location = torch.argmax(is_end_token.long(), dim=1)
-            after = after[:, :end_token_location]
-
-        # put all pieces in order
-        x_out = torch.cat([before, after], dim=1)
+    def postprocess(self, x, decoding_end):
+        # put all pieces in order:
+        x_out = []
+        # TODO: change this
+        if type(decoding_end) == int:
+            decoding_end = [decoding_end] * len(x)
+        for batch_ind in range(len(x)):
+            x_out.append(
+                torch.cat(
+                    [
+                        x[
+                            batch_ind,
+                            self.num_events_context + 1 : decoding_end[batch_ind],
+                        ],
+                        x[batch_ind, : self.num_events_context],
+                    ],
+                    dim=0,
+                )
+            )
         return x_out
