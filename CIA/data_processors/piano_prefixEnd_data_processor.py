@@ -190,8 +190,7 @@ class PianoPrefixEndDataProcessor(DataProcessor):
                 # draw randomly the length of the suffix
                 max_len_suffix = min(x_trim_len - 1, max_num_events_suffix)
                 min_len_suffix = max(1, x_trim_len - self.num_events_context)
-                if num_events_inpainted is None:
-                    num_events_suffix = random.randint(min_len_suffix, max_len_suffix)
+                num_events_suffix = random.randint(min_len_suffix, max_len_suffix)
 
                 # overwrite num_events_suffix to cover special cases in Ableton plug-in when there's no end provided by user
                 # we don't do the same w start because this case is cover by regular training
@@ -210,7 +209,14 @@ class PianoPrefixEndDataProcessor(DataProcessor):
                         num_events_suffix // 4, self.num_events_context
                     )
                 else:
-                    x_trim_len
+                    num_events_prefix = min(
+                        (x_trim_len - num_events_inpainted) // 2,
+                        self.num_events_context,
+                    )
+                    num_events_suffix = min(
+                        (x_trim_len - num_events_prefix), max_num_events_suffix
+                    )
+                    decoding_start_suffix = num_events_suffix - num_events_inpainted
 
             # split between prefix (= end) and suffix (= beginning)
             suffix = x_trim[:num_events_suffix]
