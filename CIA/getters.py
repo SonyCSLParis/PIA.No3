@@ -107,6 +107,7 @@ def get_model(
             local_window_size=model_kwargs["local_window_size"],
             num_events=num_events,
             downscaling=model_kwargs["downscaling"],
+            relative_pos_bias=model_kwargs["relative_pos_bias"],
         )
     elif model_kwargs["type"] == "perceiver_stack":
         num_events_decoder_layer = num_events

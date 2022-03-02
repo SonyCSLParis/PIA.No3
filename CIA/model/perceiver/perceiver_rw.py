@@ -20,6 +20,7 @@ class PerceiverReadWrite(Perceiver):
         local_window_size,
         num_events,
         downscaling,
+        relative_pos_bias,
     ):
         self.dim = dim
         self.dim_last_layer = dim  # needed by handler
@@ -27,8 +28,9 @@ class PerceiverReadWrite(Perceiver):
         self.dropout = dropout
         self.num_layers = num_layers
         self.local_window_size = local_window_size
+        self.relative_pos_bias = relative_pos_bias
         # latents
-        self.downscaling = downscaling
+        self.num_events = num_events
         self.num_events_latent = num_events // downscaling
         self.latent_dim = dim  # same dim for downscaled transformers
         super(PerceiverReadWrite, self).__init__(dim=dim)
@@ -67,8 +69,10 @@ class PerceiverReadWrite(Perceiver):
                     self.dim,
                     num_heads=self.num_heads,
                     dropout=self.dropout,
-                    downscaling=self.downscaling,
+                    seq_len_src=self.num_events,
+                    seq_len_tgt=self.num_events_latent,
                     residual=False,
+                    relative_pos_bias=self.relative_pos_bias,
                 )
                 for _ in range(self.num_layers)
             ]
@@ -81,8 +85,10 @@ class PerceiverReadWrite(Perceiver):
                     self.dim,
                     num_heads=self.num_heads,
                     dropout=self.dropout,
-                    downscaling=self.downscaling,
+                    seq_len_src=self.num_events_latent,
+                    seq_len_tgt=self.num_events,
                     residual=True,
+                    relative_pos_bias=self.relative_pos_bias,
                 )
                 for _ in range(self.num_layers)
             ]
@@ -96,6 +102,8 @@ class PerceiverReadWrite(Perceiver):
                     hidden_dim=self.dim * 2,
                     num_heads=self.num_heads,
                     dropout=self.dropout,
+                    seq_len=self.num_events_latent,
+                    relative_pos_bias=self.relative_pos_bias,
                 )
                 for _ in range(self.num_layers)
             ]
@@ -109,6 +117,7 @@ class PerceiverReadWrite(Perceiver):
                     num_heads=self.num_heads,
                     local_window_size=self.local_window_size,
                     dropout=self.dropout,
+                    relative_pos_bias=self.relative_pos_bias,
                 )
                 for _ in range(self.num_layers)
             ]
@@ -116,14 +125,26 @@ class PerceiverReadWrite(Perceiver):
 
 
 class QKV_Write(nn.Module):
-    def __init__(self, dim, num_heads, dropout, residual, downscaling):
+    def __init__(
+        self,
+        dim,
+        num_heads,
+        dropout,
+        residual,
+        seq_len_src,
+        seq_len_tgt,
+        relative_pos_bias,
+    ):
         super().__init__()
+
         self.scaling_atn = ScalingAttention(
             dim=dim,
             num_heads=num_heads,
-            downscaling=downscaling,
+            seq_len_src=seq_len_src,
+            seq_len_tgt=seq_len_tgt,
             dropout=dropout,
             norm_out=True,
+            relative_pos_bias=relative_pos_bias,
         )
         self.norm_x = nn.LayerNorm(dim)
         self.norm_l = nn.LayerNorm(dim)
@@ -145,14 +166,25 @@ class QKV_Write(nn.Module):
 
 
 class QKV_Read(nn.Module):
-    def __init__(self, dim, num_heads, dropout, residual, downscaling):
+    def __init__(
+        self,
+        dim,
+        num_heads,
+        dropout,
+        residual,
+        seq_len_src,
+        seq_len_tgt,
+        relative_pos_bias,
+    ):
         super().__init__()
         self.scaling_atn = ScalingAttention(
             dim=dim,
             num_heads=num_heads,
-            downscaling=downscaling,
+            seq_len_src=seq_len_src,
+            seq_len_tgt=seq_len_tgt,
             dropout=dropout,
             norm_out=False,
+            relative_pos_bias=relative_pos_bias,
         )
         self.norm_x = nn.LayerNorm(dim)
         self.residual = residual
@@ -172,10 +204,17 @@ class QKV_Read(nn.Module):
 
 
 class Process_l(nn.Module):
-    def __init__(self, dim, num_heads, hidden_dim, dropout):
+    def __init__(self, dim, num_heads, hidden_dim, dropout, seq_len, relative_pos_bias):
         super().__init__()
+
         self.self_attn = ScalingAttention(
-            dim=dim, num_heads=num_heads, downscaling=1, dropout=dropout, norm_out=False
+            dim=dim,
+            num_heads=num_heads,
+            seq_len_src=seq_len,
+            seq_len_tgt=seq_len,
+            dropout=dropout,
+            norm_out=False,
+            relative_pos_bias=relative_pos_bias,
         )
         self.norm = nn.LayerNorm(dim)
         self.norm2 = nn.LayerNorm(dim)
@@ -204,13 +243,16 @@ class Process_l(nn.Module):
 
 
 class Process_x(nn.Module):
-    def __init__(self, dim, num_heads, local_window_size, dropout):
+    def __init__(self, dim, num_heads, local_window_size, dropout, relative_pos_bias):
         super().__init__()
         self.atn = SlidingCausalLocalSelfAttention(
             dim=dim,
             heads=num_heads,
             local_window_size=local_window_size,
             dropout=dropout,
+            qkv_bias=False,
+            attn_out_bias=True,
+            relative_pos_bias=relative_pos_bias,
         )
         self.ff = GEGLU(dim, hidden_dim=2 * dim, output_dim=dim, dropout=dropout)
         self.norm_atn = nn.LayerNorm(dim)

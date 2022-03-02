@@ -9,11 +9,12 @@ class SlidingCausalLocalSelfAttention(nn.Module):
     def __init__(
         self,
         dim,
-        heads=8,
-        local_window_size=256,
-        dropout=0.0,
-        qkv_bias=False,
-        attn_out_bias=True,
+        heads,
+        local_window_size,
+        dropout,
+        qkv_bias,  # False
+        attn_out_bias,  # True
+        relative_pos_bias,
     ):
         super().__init__()
         assert dim % heads == 0, "dimension must be divisible by number of heads"
@@ -32,6 +33,9 @@ class SlidingCausalLocalSelfAttention(nn.Module):
         self.to_v = nn.Linear(dim, dim, bias=qkv_bias)
         self.to_out = nn.Linear(dim, dim, bias=attn_out_bias)
         self.dropout = nn.Dropout(dropout)
+
+        # if relative_pos_bias:
+        #     raise NotImplementedError
 
     def forward(self, x):
         q, k, v = self.to_q(x), self.to_k(x), self.to_v(x)

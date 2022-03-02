@@ -63,12 +63,13 @@ config = {
         dropout=0.1,
         local_window_size=4 * downscale,
         downscaling=downscale,
+        relative_pos_bias=True,
     ),
     # ======== Training ========
     "compute_loss_prefix": True,
     "non_conditioned_examples": True,
     "lr": 1e-4,
-    "batch_size": 7,
+    "batch_size": 6,
     "num_batches": 64,
     "num_epochs": 1500000,
     # ======== model ID ========

@@ -32,6 +32,7 @@ class Perceiver(nn.Module):
             x = process_x(x)
             latents = process_l(latents)
             dummy_l = dummy_l.repeat(batch_size, 1, 1)
+            # time-shift latents to avoid information leakage
             read_l = torch.cat([dummy_l, latents[:, :-1]], dim=1)
             # read
             x = read(x, read_l)
